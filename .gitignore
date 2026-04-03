@@ -33,3 +33,4 @@ server.log
 .DS_Store
 Thumbs.db
 spec.yaml
+example-servers/

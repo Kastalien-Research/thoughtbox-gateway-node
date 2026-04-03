@@ -161,7 +161,8 @@ async function runInWorker(
   deps: ExecuteToolDeps,
 ): Promise<ExecuteWorkerResult> {
   return new Promise((resolve) => {
-    const worker = new Worker(`(${executeWorkerMain.toString()})();`, {
+    const preamble = "var __name = (target, value) => Object.defineProperty(target, 'name', { value, configurable: true });";
+    const worker = new Worker(`${preamble};(${executeWorkerMain.toString()})();`, {
       eval: true,
       workerData: {
         code: input.code,

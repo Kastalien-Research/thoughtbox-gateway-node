@@ -1,166 +1,98 @@
-# Brave Search MCP Server
+# Thoughtbox Gateway
 
-An MCP server implementation that integrates the Brave Search API, providing both web and local search capabilities.
+A code-mode MCP gateway that proxies the entire Dedalus Marketplace through two tools: `thoughtbox_search` and `thoughtbox_execute`.
 
-## Features
-
-- **Web Search**: General queries, news, articles, with pagination and freshness controls
-- **Local Search**: Find businesses, restaurants, and services with detailed information
-- **Flexible Filtering**: Control result types, safety levels, and content freshness
-- **Smart Fallbacks**: Local search automatically falls back to web when no results are found
+Instead of exposing hundreds of individual tools, the gateway gives the LLM a JavaScript sandbox with programmatic access to discover upstreams, filter tools, and call them — all in a single turn.
 
 ## Tools
 
-- **brave_web_search**
+- **thoughtbox_search** — Write JavaScript against a frozen `catalog` object to discover upstreams and tools. Runs in a `node:vm` sandbox. Read-only.
+- **thoughtbox_execute** — Write JavaScript using the `tb` SDK to call proxied MCP tools. Runs in an isolated worker thread with RPC back to the gateway.
 
-  - Execute web searches with pagination and filtering
-  - Inputs:
-    - `query` (string): Search terms
-    - `count` (number, optional): Results per page (max 20)
-    - `offset` (number, optional): Pagination offset (max 9)
+## Setup
 
-- **brave_local_search**
-  - Search for local businesses and services
-  - Inputs:
-    - `query` (string): Local search terms
-    - `count` (number, optional): Number of results (max 20)
-  - Automatically falls back to web search if no local results found
+Get a Dedalus API key from the [dashboard](https://dedaluslabs.ai).
+
+### Claude Code / Claude Desktop (stdio)
+
+```json
+{
+  "mcpServers": {
+    "thoughtbox-gateway": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "/path/to/thoughtbox-node-gateway",
+      "env": {
+        "DEDALUS_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+### HTTP transport
+
+```bash
+DEDALUS_API_KEY=your-key-here npm start
+```
+
+Server starts on `http://localhost:8080`. Connect any StreamableHTTP MCP client to `http://localhost:8080/mcp`.
+
+### Dedalus SDK (Python)
+
+```python
+from dedalus_labs import AsyncDedalus, DedalusRunner
+
+client = AsyncDedalus()
+runner = DedalusRunner(client)
+
+result = await runner.run(
+    input="Use your tools to find the weather in San Francisco",
+    model="anthropic/claude-sonnet-4-6",
+    mcp_servers=["glassbead-tc/thoughtbox-gateway-node"],
+)
+```
+
+### Dedalus SDK (TypeScript)
+
+```typescript
+import Dedalus from "dedalus-labs";
+import { DedalusRunner } from "dedalus-labs";
+
+const client = new Dedalus();
+const runner = new DedalusRunner(client);
+
+const result = await runner.run({
+  input: "Use your tools to find the weather in San Francisco",
+  model: "anthropic/claude-sonnet-4-6",
+  mcpServers: ["glassbead-tc/thoughtbox-gateway-node"],
+});
+```
+
+## How it works
+
+The gateway connects to the Dedalus Marketplace API, fetches all open (no-auth) servers, and presents them as virtual upstreams. It also reads a local `thoughtbox.gateway.json` manifest for any additional upstream MCP servers you host yourself.
+
+Tool execution routes through the Dedalus chat completions API — the gateway sends `mcp_servers: ["slug"]` and Dedalus resolves the server and runs the tool server-side.
 
 ## Configuration
 
-### Getting an API Key
+| Environment variable | Required | Description |
+|---|---|---|
+| `DEDALUS_API_KEY` | Yes | Enables marketplace tool proxy |
+| `PORT` | No | HTTP port (default: 8080) |
+| `NODE_ENV` | No | Set to `production` for 0.0.0.0 binding |
+| `THOUGHTBOX_GATEWAY_MANIFEST` | No | Path to local gateway manifest JSON |
 
-1. Sign up for a [Brave Search API account](https://brave.com/search/api/)
-2. Choose a plan (Free tier available with 2,000 queries/month)
-3. Generate your API key [from the developer dashboard](https://api-dashboard.search.brave.com/app/keys)
-
-### Usage with Claude Desktop
-
-Add this to your `claude_desktop_config.json`:
-
-### Docker
-
-```json
-{
-  "mcpServers": {
-    "brave-search": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e",
-        "BRAVE_API_KEY",
-        "mcp/brave-search"
-      ],
-      "env": {
-        "BRAVE_API_KEY": "YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}
-```
-
-### NPX
-
-```json
-{
-  "mcpServers": {
-    "brave-search": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-brave-search"
-      ],
-      "env": {
-        "BRAVE_API_KEY": "YOUR_API_KEY_HERE"
-      }
-    }
-  }
-}
-```
-
-### Usage with VS Code
-
-For quick installation, use the one-click installation buttons below...
-
-[![Install with NPX in VS Code](https://img.shields.io/badge/VS_Code-NPM-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=brave&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22apiKey%22%7D%5D&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40modelcontextprotocol%2Fserver-brave-search%22%5D%2C%22env%22%3A%7B%22BRAVE_API_KEY%22%3A%22%24%7Binput%3Abrave_api_key%7D%22%7D%7D) [![Install with NPX in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-NPM-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=brave&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22apiKey%22%7D%5D&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40modelcontextprotocol%2Fserver-brave-search%22%5D%2C%22env%22%3A%7B%22BRAVE_API_KEY%22%3A%22%24%7Binput%3Abrave_api_key%7D%22%7D%7D&quality=insiders)
-
-[![Install with Docker in VS Code](https://img.shields.io/badge/VS_Code-Docker-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=brave&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22apiKey%22%7D%5D&config=%7B%22command%22%3A%22docker%22%2C%22args%22%3A%5B%22run%22%2C%22-i%22%2C%22--rm%22%2C%22-e%22%2C%22BRAVE_API_KEY%22%2C%22mcp%2Fbrave-search%22%5D%2C%22env%22%3A%7B%22BRAVE_API_KEY%22%3A%22%24%7Binput%3Abrave_api_key%7D%22%7D%7D) [![Install with Docker in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Docker-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=brave&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22apiKey%22%7D%5D&config=%7B%22command%22%3A%22docker%22%2C%22args%22%3A%5B%22run%22%2C%22-i%22%2C%22--rm%22%2C%22-e%22%2C%22BRAVE_API_KEY%22%2C%22mcp%2Fbrave-search%22%5D%2C%22env%22%3A%7B%22BRAVE_API_KEY%22%3A%22%24%7Binput%3Abrave_api_key%7D%22%7D%7D&quality=insiders)
-
-For manual installation, add the following JSON block to your User Settings (JSON) file in VS Code. You can do this by pressing `Ctrl + Shift + P` and typing `Preferences: Open User Settings (JSON)`.
-
-Optionally, you can add it to a file called `.vscode/mcp.json` in your workspace. This will allow you to share the configuration with others.
-
-> Note that the `mcp` key is not needed in the `.vscode/mcp.json` file.
-
-#### Docker
-
-```json
-{
-  "mcp": {
-    "inputs": [
-      {
-        "type": "promptString",
-        "id": "brave_api_key",
-        "description": "Brave Search API Key",
-        "password": true
-      }
-    ],
-    "servers": {
-      "brave-search": {
-        "command": "docker",
-        "args": [
-          "run",
-          "-i",
-          "--rm",
-          "-e",
-          "BRAVE_API_KEY",
-          "mcp/brave-search"
-        ],
-        "env": {
-          "BRAVE_API_KEY": "${input:brave_api_key}"
-        }
-      }
-    }
-  }
-}
-```
-
-#### NPX
-
-```json
-{
-  "mcp": {
-    "inputs": [
-      {
-        "type": "promptString",
-        "id": "brave_api_key",
-        "description": "Brave Search API Key",
-        "password": true
-      }
-    ],
-    "servers": {
-      "brave-search": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-        "env": {
-          "BRAVE_API_KEY": "${input:brave_api_key}"
-        }
-      }
-    }
-  }
-}
-```
-
-## Build
-
-Docker build:
+## Development
 
 ```bash
-docker build -t mcp/brave-search:latest -f src/brave-search/Dockerfile .
+bun install
+bun run dev:stdio    # stdio transport
+bun run dev:shttp    # HTTP transport on :8080
+bun run build        # compile to dist/
 ```
 
 ## License
 
-This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
+MIT

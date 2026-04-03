@@ -16,18 +16,20 @@
     "dev:stdio": "tsx src/index.ts",
     "dev:shttp": "tsx src/index.ts --port 8080",
     "prepare": "bun run build",
+    "test": "vitest run",
     "watch": "tsc --watch"
   },
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.25.3",
-    "express": "^5.1.0",
-    "zod": "^3.25.76"
+    "express": "5.1.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/express": "^5.0.5",
-    "@types/node": "^22.18.12",
-    "tsx": "^4.20.3",
-    "typescript": "^5.3.3"
+    "@types/express": "5.0.6",
+    "@types/node": "22.19.15",
+    "tsx": "4.20.3",
+    "typescript": "5.9.2",
+    "vitest": "4.1.2"
   }
 }

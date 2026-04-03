@@ -27,6 +27,7 @@ async function buildGateway(config: Config): Promise<GatewayRuntime> {
   const marketplace = new DedalusMarketplaceRuntime(
     config.dedalusApiKey,
     logger,
+    config.credentials,
   );
   const composite = new CompositeGatewayRuntime([fileGateway, marketplace]);
   await composite.refresh();

@@ -1,53 +1,33 @@
 {
-  "name": "@windsornguyen/brave-search-mcp",
+  "name": "@kastalien-research/thoughtbox-gateway",
   "version": "0.1.0",
-  "description": "A Model Context Protocol server for web and local search using the Brave Search API",
+  "description": "Code-mode MCP gateway for Dedalus Marketplace tools",
   "private": false,
   "type": "module",
   "bin": {
-    "brave-search-mcp": "./dist/index.js"
+    "thoughtbox-gateway": "./dist/index.js"
   },
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', '755')\"",
-    "start": "node dist/index.js --port 3002",
+    "start": "node dist/index.js --port 8080",
     "dev:stdio": "tsx src/index.ts",
-    "dev:shttp": "tsx src/index.ts --port 3002",
+    "dev:shttp": "tsx src/index.ts --port 8080",
     "prepare": "bun run build",
-    "watch": "tsc --watch",
-    "inspector": "npx @modelcontextprotocol/inspector dist/index.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/windsornguyen/brave-search-mcp.git"
-  },
-  "keywords": [
-    "mcp",
-    "brave-search",
-    "web-search",
-    "local-search",
-    "search-api"
-  ],
-  "author": {
-    "name": "Windsor Nguyen",
-    "url": "https://windsornguyen.com"
+    "watch": "tsc --watch"
   },
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/windsornguyen/brave-search-mcp/issues"
-  },
-  "homepage": "https://github.com/windsornguyen/brave-search-mcp#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.16.0",
-    "@playwright/test": "^1.54.2",
-    "axios": "^1.11.0",
-    "dotenv": "^17.2.1"
+    "@modelcontextprotocol/sdk": "1.25.3",
+    "express": "^5.1.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/node": "^24.2.0",
+    "@types/express": "^5.0.5",
+    "@types/node": "^22.18.12",
     "tsx": "^4.20.3",
-    "typescript": "^5.9.2"
+    "typescript": "^5.3.3"
   }
 }

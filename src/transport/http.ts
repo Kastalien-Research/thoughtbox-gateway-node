@@ -1,157 +1,97 @@
-import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { randomUUID } from 'crypto';
-import { createStandaloneServer } from '../server.js';
-import { Config } from '../config.js';
+import express, { type Request, type Response } from "express";
+import { randomUUID } from "node:crypto";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createStandaloneServer } from "../server.js";
+import type { Config } from "../config.js";
 
-/** Session storage for streamable HTTP connections */
-const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: any }>();
+const sessions = new Map<
+  string,
+  { transport: StreamableHTTPServerTransport; server: McpServer }
+>();
 
-/**
- * Starts the HTTP transport server
- * @param {Config} config - Server configuration
- */
 export function startHttpTransport(config: Config): void {
-    const httpServer = createServer();
+  const app = express();
+  app.use(express.json());
 
-    httpServer.on('request', async (req, res) => {
-        const url = new URL(req.url!, `http://${req.headers.host}`);
-
-        switch (url.pathname) {
-            case '/mcp':
-                await handleMcpRequest(req, res, config);
-                break;
-            case '/health':
-                handleHealthCheck(res);
-                break;
-            default:
-                handleNotFound(res);
-        }
+  app.get("/health", (_req: Request, res: Response) => {
+    res.json({
+      status: "ok",
+      transport: "streamable-http",
+      server: "thoughtbox-gateway",
+      version: "0.1.0",
     });
+  });
 
-    const host = config.isProduction ? '0.0.0.0' : 'localhost';
-    
-    httpServer.listen(config.port, host, () => {
-        logServerStart(config);
-    });
-}
-
-/**
- * Handles MCP protocol requests
- * @param {IncomingMessage} req - HTTP request
- * @param {ServerResponse} res - HTTP response
- * @param {Config} config - Server configuration
- * @returns {Promise<void>}
- * @private
- */
-async function handleMcpRequest(
-    req: IncomingMessage,
-    res: ServerResponse,
-    config: Config
-): Promise<void> {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+  app.post("/mcp", async (req: Request, res: Response) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
     if (sessionId) {
-        const session = sessions.get(sessionId);
-        if (!session) {
-            res.statusCode = 404;
-            res.end('Session not found');
-            return;
-        }
-        return await session.transport.handleRequest(req, res);
-    }
-
-    if (req.method === 'POST') {
-        await createNewSession(req, res, config);
+      const session = sessions.get(sessionId);
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
         return;
+      }
+      await session.transport.handleRequest(req, res, req.body);
+      return;
     }
-
-    res.statusCode = 400;
-    res.end('Invalid request');
-}
-
-/**
- * Creates a new MCP session for HTTP transport
- * @param {IncomingMessage} req - HTTP request
- * @param {ServerResponse} res - HTTP response
- * @param {Config} config - Server configuration
- * @returns {Promise<void>}
- * @private
- */
-async function createNewSession(
-    req: IncomingMessage,
-    res: ServerResponse,
-    config: Config
-): Promise<void> {
-    const serverInstance = createStandaloneServer(config.apiKey);
-    const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sessionId) => {
-            sessions.set(sessionId, { transport, server: serverInstance });
-            console.log('New Brave Search session created:', sessionId);
-        }
-    });
-
-    transport.onclose = () => {
-        if (transport.sessionId) {
-            sessions.delete(transport.sessionId);
-            console.log('Brave Search session closed:', transport.sessionId);
-        }
-    };
 
     try {
-        await serverInstance.connect(transport);
-        await transport.handleRequest(req, res);
+      const serverInstance = await createStandaloneServer(config);
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          sessions.set(id, { transport, server: serverInstance });
+          console.error("[INFO]  New session created:", id);
+        },
+      });
+
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          sessions.delete(transport.sessionId);
+          console.error("[INFO]  Session closed:", transport.sessionId);
+        }
+      };
+
+      await serverInstance.connect(transport);
+      await transport.handleRequest(req, res, req.body);
     } catch (error) {
-        console.error('Streamable HTTP connection error:', error);
-        res.statusCode = 500;
-        res.end('Internal server error');
+      console.error("[ERROR] Streamable HTTP connection error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Internal server error" });
+      }
     }
-}
+  });
 
-/**
- * Handles health check endpoint
- * @param {ServerResponse} res - HTTP response
- * @private
- */
-function handleHealthCheck(res: ServerResponse): void {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-        status: 'healthy', 
-        timestamp: new Date().toISOString() 
-    }));
-}
+  const handleMethodNotAllowed = (_req: Request, res: Response) => {
+    res.status(405).json({ error: "Method not supported" });
+  };
+  app.get("/mcp", handleMethodNotAllowed);
+  app.delete("/mcp", handleMethodNotAllowed);
 
-/**
- * Handles 404 Not Found responses
- * @param {ServerResponse} res - HTTP response
- * @private
- */
-function handleNotFound(res: ServerResponse): void {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not Found');
-}
+  const host = config.isProduction ? "0.0.0.0" : "localhost";
 
-/**
- * Logs server startup information
- * @param {Config} config - Server configuration
- * @private
- */
-function logServerStart(config: Config): void {
-    const displayUrl = config.isProduction 
-        ? `Port ${config.port}` 
-        : `http://localhost:${config.port}`;
-    
-    console.log(`Brave Search MCP Server listening on ${displayUrl}`);
+  app.listen(config.port, host, () => {
+    const displayUrl = config.isProduction
+      ? `Port ${config.port}`
+      : `http://localhost:${config.port}`;
+    console.error(`[INFO]  Thoughtbox Gateway listening on ${displayUrl}`);
 
     if (!config.isProduction) {
-        console.log('Put this in your client config:');
-        console.log(JSON.stringify({
-            "mcpServers": {
-                "brave-search": {
-                    "url": `http://localhost:${config.port}/mcp`
-                }
-            }
-        }, null, 2));
+      console.error(
+        "Put this in your client config:\n" +
+          JSON.stringify(
+            {
+              mcpServers: {
+                "thoughtbox-gateway": {
+                  url: `http://localhost:${config.port}/mcp`,
+                },
+              },
+            },
+            null,
+            2,
+          ),
+      );
     }
+  });
 }

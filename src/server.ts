@@ -1,143 +1,84 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Config } from "./config.js";
+import type { GatewayRuntime } from "./gateway/types.js";
+import type { Logger } from "./types.js";
 import {
-    CallToolRequestSchema,
-    ErrorCode,
-    ListToolsRequestSchema,
-    McpError,
-} from '@modelcontextprotocol/sdk/types.js';
-import { BraveClient } from './client.js';
-import {
-    webSearchToolDefinition,
-    localSearchToolDefinition,
-    handleWebSearchTool,
-    handleLocalSearchTool
-} from './tools/index.js';
+  GatewayRegistry,
+  CompositeGatewayRuntime,
+  DedalusMarketplaceRuntime,
+} from "./gateway/index.js";
+import { createThoughtboxMarketplaceServer } from "./dedalus-marketplace/server.js";
 
-/**
- * Main server class for Brave Search MCP integration
- * @class BraveServer
- */
-export class BraveServer {
-    private client: BraveClient;
-    private server: Server;
+const logger: Logger = {
+  debug: (msg, ...args) => console.error(`[DEBUG] ${msg}`, ...args),
+  info: (msg, ...args) => console.error(`[INFO]  ${msg}`, ...args),
+  warn: (msg, ...args) => console.error(`[WARN]  ${msg}`, ...args),
+  error: (msg, ...args) => console.error(`[ERROR] ${msg}`, ...args),
+};
 
-    /**
-     * Creates a new BraveServer instance
-     * @param {string} apiKey - Brave API key for authentication
-     */
-    constructor(apiKey: string) {
-        this.client = new BraveClient(apiKey);
-        this.server = new Server(
-            {
-                name: 'brave-search',
-                version: '0.1.0',
-            },
-            {
-                capabilities: {
-                    tools: {},
-                },
-            }
-        );
+async function buildGateway(config: Config): Promise<GatewayRuntime> {
+  const fileGateway = await GatewayRegistry.fromDefaultManifest(logger);
 
-        this.setupHandlers();
-        this.setupErrorHandling();
-    }
+  if (!config.dedalusApiKey) {
+    return fileGateway;
+  }
 
-    /**
-     * Sets up MCP request handlers for tools
-     * @private
-     */
-    private setupHandlers(): void {
-        // List available tools
-        this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-            tools: [webSearchToolDefinition, localSearchToolDefinition],
-        }));
-
-        // Handle tool calls
-        this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            const { name, arguments: args } = request.params;
-
-            switch (name) {
-                case 'brave_web_search':
-                    return handleWebSearchTool(this.client, args);
-                
-                case 'brave_local_search':
-                    return handleLocalSearchTool(this.client, args);
-                
-                default:
-                    throw new McpError(
-                        ErrorCode.MethodNotFound,
-                        `Unknown tool: ${name}`
-                    );
-            }
-        });
-    }
-
-    /**
-     * Configures error handling and graceful shutdown
-     * @private
-     */
-    private setupErrorHandling(): void {
-        this.server.onerror = (error) => console.error('[MCP Error]', error);
-        
-        process.on('SIGINT', async () => {
-            await this.server.close();
-            process.exit(0);
-        });
-    }
-
-    /**
-     * Returns the underlying MCP server instance
-     * @returns {Server} MCP server instance
-     */
-    getServer(): Server {
-        return this.server;
-    }
+  const marketplace = new DedalusMarketplaceRuntime(
+    config.dedalusApiKey,
+    logger,
+  );
+  const composite = new CompositeGatewayRuntime([fileGateway, marketplace]);
+  await composite.refresh();
+  logger.info("[Dedalus] Marketplace integration enabled");
+  return composite;
 }
 
-/**
- * Factory function for creating standalone server instances
- * Used by HTTP transport for session-based connections
- * @param {string} apiKey - Brave API key for authentication
- * @returns {Server} Configured MCP server instance
- */
-export function createStandaloneServer(apiKey: string): Server {
-    const server = new Server(
-        {
-            name: "brave-search-discovery",
-            version: "0.1.0",
-        },
-        {
-            capabilities: {
-                tools: {},
-            },
-        },
-    );
+export class ThoughtboxServer {
+  private readonly config: Config;
+  private mcpServer: McpServer | null = null;
+  private gateway: GatewayRuntime | null = null;
 
-    const client = new BraveClient(apiKey);
+  constructor(config: Config) {
+    this.config = config;
+  }
 
-    // Set up handlers
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: [webSearchToolDefinition, localSearchToolDefinition],
-    }));
-
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        const { name, arguments: args } = request.params;
-
-        switch (name) {
-            case 'brave_web_search':
-                return handleWebSearchTool(client, args);
-            
-            case 'brave_local_search':
-                return handleLocalSearchTool(client, args);
-            
-            default:
-                throw new McpError(
-                    ErrorCode.MethodNotFound,
-                    `Unknown tool: ${name}`
-                );
-        }
+  async init(): Promise<void> {
+    this.gateway = await buildGateway(this.config);
+    this.mcpServer = await createThoughtboxMarketplaceServer({
+      gateway: this.gateway,
     });
+    this.setupErrorHandling();
+  }
 
-    return server;
+  getServer(): Server {
+    if (!this.mcpServer) {
+      throw new Error("ThoughtboxServer not initialized — call init() first");
+    }
+    return this.mcpServer.server;
+  }
+
+  async close(): Promise<void> {
+    await Promise.allSettled([
+      this.mcpServer?.close(),
+      this.gateway?.close(),
+    ]);
+  }
+
+  private setupErrorHandling(): void {
+    this.mcpServer!.server.onerror = (error) =>
+      console.error("[MCP Error]", error);
+
+    process.on("SIGINT", async () => {
+      await this.close();
+      process.exit(0);
+    });
+  }
+}
+
+export async function createStandaloneServer(
+  config: Config,
+): Promise<McpServer> {
+  const gateway = await buildGateway(config);
+  return createThoughtboxMarketplaceServer({ gateway });
 }

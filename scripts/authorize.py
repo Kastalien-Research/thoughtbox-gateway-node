@@ -12,6 +12,7 @@ Example:
 """
 
 import asyncio
+import os
 import sys
 import webbrowser
 from dedalus_labs import AsyncDedalus, AuthenticationError, DedalusRunner
@@ -21,6 +22,13 @@ _PROBE_MODEL = "anthropic/claude-haiku-4-5-20251001"
 
 async def main() -> None:
     """Authorize a marketplace server via OAuth."""
+    if not os.getenv("DEDALUS_API_KEY"):
+        print(
+            "Error: DEDALUS_API_KEY environment variable not set",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if len(sys.argv) < 2:
         print("Usage: python scripts/authorize.py <slug>", file=sys.stderr)
         print(

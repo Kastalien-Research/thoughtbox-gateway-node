@@ -119,9 +119,10 @@ async function callToolViaDedalus(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
+    const rawText = await res.text().catch(() => "");
+    const safeText = rawText.slice(0, 200);
     logger.error(
-      `[Dedalus] Tool call failed for ${slug}/${toolName}: ${res.status} ${text}`,
+      `[Dedalus] Tool call failed for ${slug}/${toolName}: ${res.status} ${safeText}`,
     );
     return {
       content: [

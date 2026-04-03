@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import YAML from "yaml";
 import { z } from "zod";
 import type { GatewayManifest, GatewayManifestUpstream } from "./types.js";
 
@@ -29,12 +28,8 @@ const manifestSchema = z.object({
   }
 });
 
-function parseManifest(raw: string, filePath: string): GatewayManifest {
-  const parsed = filePath.endsWith(".yaml") || filePath.endsWith(".yml")
-    ? YAML.parse(raw)
-    : JSON.parse(raw);
-
-  return manifestSchema.parse(parsed) as GatewayManifest;
+function parseManifest(raw: string): GatewayManifest {
+  return manifestSchema.parse(JSON.parse(raw)) as GatewayManifest;
 }
 
 export function getDefaultGatewayManifestPath(cwd = process.cwd()): string {
@@ -51,7 +46,7 @@ export function getDefaultGatewayManifestPath(cwd = process.cwd()): string {
 export async function loadGatewayManifest(filePath = getDefaultGatewayManifestPath()): Promise<GatewayManifest> {
   try {
     const raw = await readFile(filePath, "utf8");
-    return parseManifest(raw, filePath);
+    return parseManifest(raw);
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
       return { version: 1, upstreams: [] };

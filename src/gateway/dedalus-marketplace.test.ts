@@ -40,22 +40,30 @@ function mockFetch(
   marketplaceBody: unknown,
   completionBody: unknown,
   completionOk = true,
-) {
-  return vi.fn().mockImplementation((url: string, _opts?: RequestInit) => {
-    if ((url as string).includes("marketplace")) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(marketplaceBody),
-      });
-    }
-    return Promise.resolve({
-      ok: completionOk,
-      status: completionOk ? 200 : 500,
-      statusText: completionOk ? "OK" : "Internal Server Error",
-      json: () => Promise.resolve(completionBody),
-      text: () => Promise.resolve("upstream error text"),
-    });
-  });
+): ReturnType<typeof vi.fn<typeof global.fetch>> {
+  return vi.fn<typeof global.fetch>().mockImplementation(
+    (input: string | URL | Request) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+      if (url.includes("marketplace")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(marketplaceBody), { status: 200 }),
+        );
+      }
+
+      const status = completionOk ? 200 : 500;
+      const statusText = completionOk ? "OK" : "Internal Server Error";
+      const body = completionOk
+        ? JSON.stringify(completionBody)
+        : "upstream error text";
+
+      return Promise.resolve(new Response(body, { status, statusText }));
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +87,7 @@ describe("DedalusMarketplaceRuntime.callTool — credentials passthrough", () =>
       { connection_name: "twitter", values: { api_key: "abc123" } },
     ];
     const fetchSpy = mockFetch(MARKETPLACE_RESPONSE, COMPLETION_RESPONSE);
-    global.fetch = fetchSpy as unknown as typeof global.fetch;
+    global.fetch = fetchSpy;
 
     const logger = makeLogger();
     const runtime = new DedalusMarketplaceRuntime(FAKE_API_KEY, logger, creds);
@@ -90,16 +98,19 @@ describe("DedalusMarketplaceRuntime.callTool — credentials passthrough", () =>
     });
 
     const completionCall = fetchSpy.mock.calls.find(
-      (args: unknown[]) => typeof args[0] === "string" && args[0].includes("chat/completions"),
+      (args) =>
+        typeof args[0] === "string" && args[0].includes("chat/completions"),
     );
     expect(completionCall).toBeDefined();
-    const sentBody = JSON.parse(completionCall![1].body as string);
+    const sentBody = JSON.parse(
+      (completionCall![1] as RequestInit).body as string,
+    );
     expect(sentBody.credentials).toEqual(creds);
   });
 
   it("omits credentials field from request body when undefined", async () => {
     const fetchSpy = mockFetch(MARKETPLACE_RESPONSE, COMPLETION_RESPONSE);
-    global.fetch = fetchSpy as unknown as typeof global.fetch;
+    global.fetch = fetchSpy;
 
     const logger = makeLogger();
     const runtime = new DedalusMarketplaceRuntime(FAKE_API_KEY, logger);
@@ -110,10 +121,13 @@ describe("DedalusMarketplaceRuntime.callTool — credentials passthrough", () =>
     });
 
     const completionCall = fetchSpy.mock.calls.find(
-      (args: unknown[]) => typeof args[0] === "string" && args[0].includes("chat/completions"),
+      (args) =>
+        typeof args[0] === "string" && args[0].includes("chat/completions"),
     );
     expect(completionCall).toBeDefined();
-    const sentBody = JSON.parse(completionCall![1].body as string);
+    const sentBody = JSON.parse(
+      (completionCall![1] as RequestInit).body as string,
+    );
     expect(Object.prototype.hasOwnProperty.call(sentBody, "credentials")).toBe(
       false,
     );
@@ -127,7 +141,7 @@ describe("DedalusMarketplaceRuntime.callTool — credentials passthrough", () =>
       },
     ];
     const fetchSpy = mockFetch(MARKETPLACE_RESPONSE, {}, false);
-    global.fetch = fetchSpy as unknown as typeof global.fetch;
+    global.fetch = fetchSpy;
 
     const logger = makeLogger();
     const runtime = new DedalusMarketplaceRuntime(

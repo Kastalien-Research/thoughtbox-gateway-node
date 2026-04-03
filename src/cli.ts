@@ -27,7 +27,7 @@ export function parseArgs(): CliOptions {
         switch (args[i]) {
             case '--port':
                 if (i + 1 < args.length) {
-                    options.port = parseInt(args[++i], 10);
+                    options.port = parseInt(args[++i]!, 10);
                 }
                 break;
             case '--stdio':

@@ -10,7 +10,7 @@ async function main() {
   const cliOptions = parseArgs();
 
   const shouldUseHttp =
-    cliOptions.port || (process.env.PORT && !cliOptions.stdio);
+    cliOptions.port || (process.env["PORT"] && !cliOptions.stdio);
   const port = cliOptions.port || config.port;
 
   if (shouldUseHttp) {

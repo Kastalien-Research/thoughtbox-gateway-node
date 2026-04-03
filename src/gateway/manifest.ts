@@ -33,7 +33,7 @@ function parseManifest(raw: string): GatewayManifest {
 }
 
 export function getDefaultGatewayManifestPath(cwd = process.cwd()): string {
-  const configured = process.env.THOUGHTBOX_GATEWAY_MANIFEST;
+  const configured = process.env["THOUGHTBOX_GATEWAY_MANIFEST"];
   if (configured) {
     return path.isAbsolute(configured)
       ? configured

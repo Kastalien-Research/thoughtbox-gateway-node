@@ -95,6 +95,7 @@ async function callToolViaDedalus(
   toolName: string,
   toolArgs: Record<string, unknown> | undefined,
   logger: Logger,
+  credentials: unknown[] | undefined,
 ): Promise<CallToolResult> {
   const prompt = toolArgs && Object.keys(toolArgs).length > 0
     ? `Call the tool "${toolName}" with arguments: ${JSON.stringify(toolArgs)}. Return only the tool result.`
@@ -105,6 +106,7 @@ async function callToolViaDedalus(
     mcp_servers: [slug],
     messages: [{ role: "user", content: prompt }],
     max_tokens: 4096,
+    ...(credentials ? { credentials } : {}),
   };
 
   const res = await fetch(DEDALUS_API_URL, {
@@ -196,6 +198,7 @@ export class DedalusMarketplaceRuntime implements GatewayRuntime {
   constructor(
     private readonly apiKey: string,
     private readonly logger: Logger,
+    private readonly credentials: unknown[] | undefined = undefined,
   ) {}
 
   async refresh(): Promise<void> {
@@ -244,6 +247,7 @@ export class DedalusMarketplaceRuntime implements GatewayRuntime {
       args.toolName,
       args.arguments,
       this.logger,
+      this.credentials,
     );
   }
 

@@ -16,6 +16,8 @@ import sys
 import webbrowser
 from dedalus_labs import AsyncDedalus, AuthenticationError, DedalusRunner
 
+_PROBE_MODEL = "anthropic/claude-haiku-4-5-20251001"
+
 
 async def main() -> None:
     """Authorize a marketplace server via OAuth."""
@@ -28,6 +30,9 @@ async def main() -> None:
         sys.exit(1)
 
     slug = sys.argv[1]
+    if not slug:
+        print("Error: slug must not be empty", file=sys.stderr)
+        sys.exit(1)
 
     client = AsyncDedalus()
     runner = DedalusRunner(client)
@@ -35,16 +40,17 @@ async def main() -> None:
     try:
         await runner.run(
             input=f"List available tools on {slug}",
-            model="anthropic/claude-haiku-4-5-20251001",
+            model=_PROBE_MODEL,
             mcp_servers=[slug],
         )
         print(f"Already authorized for {slug}")
     except AuthenticationError as e:
         # Extract connect_url from error body
         body = e.body if isinstance(e.body, dict) else {}
+        detail = body.get("detail")
         url = body.get("connect_url") or (
-            body.get("detail", {}).get("connect_url")
-            if isinstance(body.get("detail"), dict)
+            detail.get("connect_url")
+            if isinstance(detail, dict)
             else None
         )
 
@@ -53,15 +59,25 @@ async def main() -> None:
             webbrowser.open(url)
             input("Press Enter after completing OAuth...")
 
-            # Retry to confirm authorization succeeded
-            await runner.run(
-                input=f"List available tools on {slug}",
-                model="anthropic/claude-haiku-4-5-20251001",
-                mcp_servers=[slug],
-            )
+            try:
+                await runner.run(
+                    input=f"List available tools on {slug}",
+                    model=_PROBE_MODEL,
+                    mcp_servers=[slug],
+                )
+            except AuthenticationError:
+                print(
+                    f"Error: still not authorized for {slug} "
+                    "after OAuth flow",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             print(f"Authorized for {slug}")
         else:
-            print(f"Error: No OAuth URL found in error response", file=sys.stderr)
+            print(
+                "Error: No OAuth URL found in error response",
+                file=sys.stderr,
+            )
             raise
 
 

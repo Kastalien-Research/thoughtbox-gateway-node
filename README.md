@@ -11,9 +11,15 @@ Instead of exposing hundreds of individual tools, the gateway gives the LLM a Ja
 
 ## Setup
 
-Get a Dedalus API key from the [dashboard](https://dedaluslabs.ai).
+### Local (stdio)
 
-### Claude Code / Claude Desktop (stdio)
+Run from the repo directory:
+
+```bash
+DEDALUS_API_KEY=your-key-here bun run dev:stdio
+```
+
+Or add to Claude Code's `.mcp.json`:
 
 ```json
 {
@@ -21,7 +27,6 @@ Get a Dedalus API key from the [dashboard](https://dedaluslabs.ai).
     "thoughtbox-gateway": {
       "command": "npx",
       "args": ["tsx", "src/index.ts"],
-      "cwd": "/path/to/thoughtbox-node-gateway",
       "env": {
         "DEDALUS_API_KEY": "your-key-here"
       }
@@ -30,15 +35,28 @@ Get a Dedalus API key from the [dashboard](https://dedaluslabs.ai).
 }
 ```
 
-### HTTP transport
+### Local (HTTP)
 
 ```bash
-DEDALUS_API_KEY=your-key-here npm start
+DEDALUS_API_KEY=your-key-here bun run dev:shttp
 ```
 
-Server starts on `http://localhost:8080`. Connect any StreamableHTTP MCP client to `http://localhost:8080/mcp`.
+Then connect any StreamableHTTP MCP client to `http://localhost:8080/mcp`:
 
-### Dedalus SDK (Python)
+```json
+{
+  "mcpServers": {
+    "thoughtbox-gateway": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+### Via Dedalus SDK
+
+Requires `uv pip install dedalus-labs` (Python) or `npm install dedalus-labs` (TypeScript) and a `DEDALUS_API_KEY`.
 
 ```python
 from dedalus_labs import AsyncDedalus, DedalusRunner
@@ -53,22 +71,6 @@ result = await runner.run(
 )
 ```
 
-### Dedalus SDK (TypeScript)
-
-```typescript
-import Dedalus from "dedalus-labs";
-import { DedalusRunner } from "dedalus-labs";
-
-const client = new Dedalus();
-const runner = new DedalusRunner(client);
-
-const result = await runner.run({
-  input: "Use your tools to find the weather in San Francisco",
-  model: "anthropic/claude-sonnet-4-6",
-  mcpServers: ["glassbead-tc/thoughtbox-gateway-node"],
-});
-```
-
 ## How it works
 
 The gateway connects to the Dedalus Marketplace API, fetches all open (no-auth) servers, and presents them as virtual upstreams. It also reads a local `thoughtbox.gateway.json` manifest for any additional upstream MCP servers you host yourself.
@@ -79,10 +81,9 @@ Tool execution routes through the Dedalus chat completions API — the gateway s
 
 | Environment variable | Required | Description |
 |---|---|---|
-| `DEDALUS_API_KEY` | Yes | Enables marketplace tool proxy |
+| `DEDALUS_API_KEY` | No | Enables marketplace tool proxy. Without it, only local manifest upstreams are available. |
 | `PORT` | No | HTTP port (default: 8080) |
 | `NODE_ENV` | No | Set to `production` for 0.0.0.0 binding |
-| `THOUGHTBOX_GATEWAY_MANIFEST` | No | Path to local gateway manifest JSON |
 
 ## Development
 

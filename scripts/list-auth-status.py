@@ -59,18 +59,22 @@ async def main() -> None:
         )
         sys.exit(1)
 
-    servers_to_check = set(sys.argv[1:])
+    cli_filter = set(sys.argv[1:])
     servers = fetch_marketplace()
-    all_servers = {s.get("slug"): s for s in servers if s.get("slug")}
+    all_slugs = {s.get("slug") for s in servers if s.get("slug")}
 
-    # If specific servers requested, check only those
-    test_slugs = servers_to_check & set(all_servers.keys())
-    if servers_to_check - set(all_servers.keys()):
-        unknown = servers_to_check - set(all_servers.keys())
-        print(
-            f"Warning: unknown servers {unknown}",
-            file=sys.stderr,
-        )
+    if cli_filter:
+        unknown = cli_filter - all_slugs
+        if unknown:
+            print(f"Warning: unknown servers {unknown}", file=sys.stderr)
+        test_slugs = cli_filter & all_slugs
+    else:
+        # No filter: probe every non-open server
+        test_slugs = {
+            s.get("slug") for s in servers
+            if s.get("slug")
+            and s.get("tags", {}).get("auth", {}).get("none") is not True
+        }
 
     client = AsyncDedalus()
     runner = DedalusRunner(client)
